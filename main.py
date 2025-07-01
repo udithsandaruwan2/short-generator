@@ -60,7 +60,7 @@ def search_pexels_videos(query: str, api_key: str, it: int, min_dur: int) -> Lis
     print(colored(f"[+] Found {len(video_urls)} videos for query", "cyan"))
     return video_urls
 
-def download_video(url: str, directory: str = "./temp") -> str:
+def download_video(url: str, directory: str = "./temp/videos") -> str:
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, f"{uuid.uuid4()}.mp4")
     with open(path, "wb") as f:
@@ -102,7 +102,7 @@ def combine_video_clips(video_paths: List[str], target_duration: int = 45) -> st
             break
 
     final = concatenate_videoclips(clips)
-    path = f"./temp/{uuid.uuid4()}_combined.mp4"
+    path = f"./temp/videos/{uuid.uuid4()}_combined.mp4"
     final.write_videofile(path, fps=30)
     return path
 
@@ -131,7 +131,7 @@ def add_subs_and_audio(video_path: str, audio_path: str, srt_path: str, color="w
             fontsize=60,
             color=color,
             stroke_color="black",
-            stroke_width=1,
+            stroke_width=2,
             method="caption",                 # Enables word wrapping
             size=(1000, None),               # Max width to wrap text at 1000px (inside 1080px)
             align="center",                  # Center text horizontally
@@ -151,9 +151,11 @@ def add_subs_and_audio(video_path: str, audio_path: str, srt_path: str, color="w
 
     # Composite
     final = CompositeVideoClip([video, mask, subs.set_position(("center", "center"))], size=(1080, 1920)).set_audio(audio)
-    out_path = f"./temp/final_{uuid.uuid4()}.mp4"
+    out_path = f"./final/final_{uuid.uuid4()}.mp4"
     final.write_videofile(out_path, fps=30)
-    return out_path
+    root_path = os.path.dirname(os.path.abspath(__file__))
+    final_path = f"{root_path}\final\final_{uuid.uuid4()}.mp4"
+    return final_path
 
 
 def main():
@@ -173,12 +175,11 @@ def main():
 
 
     video_query = "nature calm"
-    target_duration = 45  # 🎯 set to 45 seconds
 
     # STEP 2: TTS to voiceover.wav
     audio_path = text_to_speech(input_text)
     audio = AudioFileClip(audio_path)
-    target_duration = int(audio.duration)  # sync video length to audio
+    target_duration = int(audio.duration)  + 2  # Add 2 seconds buffer
 
 
     # STEP 3: Get stock videos
@@ -196,6 +197,26 @@ def main():
     # STEP 6: Add subs + audio to final video
     final_video_path = add_subs_and_audio(combined_video, audio_path, srt_path)
     print(colored(f"[✓] Final video saved at: {final_video_path}", "green"))
+
+def generate_video(input_text: str, video_query: str) -> str:
+
+    audio_path = text_to_speech(input_text)
+    audio = AudioFileClip(audio_path)
+    target_duration = int(audio.duration)
+
+    video_urls = search_pexels_videos(video_query, PEXELS_API_KEY, it=3, min_dur=5)
+    video_paths = [download_video(url) for url in video_urls]
+
+    combined_video = combine_video_clips(video_paths, target_duration)
+
+    text, segments = transcribe_audio_locally(audio_path)
+    srt_path = "./temp/subtitles.srt"
+    whisper_segments_to_srt(segments, srt_path)
+
+    final_video_path = add_subs_and_audio(combined_video, audio_path, srt_path)
+
+    return final_video_path
+
 
 if __name__ == "__main__":
     main()
